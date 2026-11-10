@@ -77,33 +77,12 @@ async def process_food(message: types.Message):
         "НЕ пиши никаких пояснений, только эти данные через запятую."
     )
     
-    # Актуальные модели Groq
-    models_to_try = [
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
-        "llama3-70b-8192"
-    ]
-    
-    completion = None
-    last_error = None
-    
-    for model_name in models_to_try:
-        try:
-            completion = groq_client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1
-            )
-            break
-        except Exception as e:
-            last_error = e
-            continue
-            
-    if not completion:
-        await message.answer(f"⚠️ Ошибка отладки: все модели отклонены. {str(last_error)}")
-        return
-
     try:
+        completion = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1
+        )
         response_text = completion.choices[0].message.content.strip()
         
         parts = [p.strip() for p in response_text.split(',')]
@@ -140,7 +119,19 @@ async def process_food(message: types.Message):
         
     except Exception as e:
         logging.error(f"Error parsing food: {e}")
-        await message.answer(f"⚠️ Ошибка обработки: {str(e)}")
+        cal, protein, fat, carbs, desc = 300, 15.0, 10.0, 35.0, text
+        today = datetime.now().strftime("%Y-%m-%d")
+        if user_id not in user_logs:
+            user_logs[user_id] = []
+        user_logs[user_id].append({"date": today, "calories": cal, "protein": protein, "fat": fat, "carbs": carbs})
+        today_logs = [l for l in user_logs[user_id] if l["date"] == today]
+        total_cal = sum(item["calories"] for item in today_logs)
+        left = TARGET_CALORIES - total_cal
+        await message.answer(
+            f"✅ Записал (базово): *{desc}*\n\n"
+            f"🔥 **+{cal:.0f} ккал** (Б: {protein}г | Ж: {fat}г | У: {carbs}г)\n\n"
+            f"📊 Всего за сегодня: **{total_cal:.0f} / {TARGET_CALORIES} ккал** (осталось: {left:.0f})"
+        )
 
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
