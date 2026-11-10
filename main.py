@@ -79,13 +79,12 @@ async def process_food(message: types.Message):
     
     try:
         completion = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama3-70b-8192",  # Исправлено имя модели
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
         response_text = completion.choices[0].message.content.strip()
         
-        # Разбираем строчку по запятым
         parts = [p.strip() for p in response_text.split(',')]
         if len(parts) >= 5:
             cal = float(parts[0])
@@ -120,7 +119,7 @@ async def process_food(message: types.Message):
         
     except Exception as e:
         logging.error(f"Error parsing food: {e}")
-        await message.answer("Бро, давай еще раз попробуем, напиши блюдо.")
+        await message.answer(f"⚠️ Ошибка отладки: {str(e)}")
 
 # Веб-сервер-заглушка для удержания порта на Render
 def run_web_server():
@@ -137,3 +136,4 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
     asyncio.run(main())
+    
