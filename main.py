@@ -77,12 +77,11 @@ async def process_food(message: types.Message):
         "НЕ пиши никаких пояснений, только эти данные через запятую."
     )
     
+    # Актуальные модели Groq
     models_to_try = [
-        "llama-3.1-8b-instant",
         "llama-3.3-70b-versatile",
-        "llama3-70b-8192",
-        "llama3-8b-8192",
-        "gemma2-9b-it"
+        "llama-3.1-8b-instant",
+        "llama3-70b-8192"
     ]
     
     completion = None
