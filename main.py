@@ -79,7 +79,7 @@ async def process_food(message: types.Message):
     
     try:
         completion = groq_client.chat.completions.create(
-            model="llama3-70b-8192",  # Исправлено имя модели
+            model="llama-3.1-8b-instant",  # Актуальная и быстрая модель
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
@@ -136,4 +136,3 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
     asyncio.run(main())
-    
