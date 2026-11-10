@@ -40,8 +40,4 @@ async def cmd_status(message: types.Message):
     today = datetime.now().strftime("%Y-%m-%d")
     
     logs = user_logs.get(user_id, [])
-    today_logs = [l for l in logs if l["date"] == today]
-    
-    if not today_logs:
-        await message.answer("Сегодня ты еще ничего не записывал в дневник.")
-        return
+    today_logs = [l fo
