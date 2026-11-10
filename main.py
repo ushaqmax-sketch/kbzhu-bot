@@ -27,8 +27,7 @@ logging.basicConfig(level=logging.INFO)
 async def cmd_start(message: types.Message):
     await message.answer(
         "Здорово, бро! Твой облачный бот-нутрициолог запущен и работает.\n\n"
-        "Напиши текстом, что ты съел (например: *'Гречка отварная 210г и рыбная котлета 90г'*), "
-        "а я посчитаю КБЖУ, запишу в статистику и подскажу остаток до цели (1750 ккал).\n\n"
+        "Напиши текстом, что ты съел, а я посчитаю КБЖУ, запишу в статистику и подскажу остаток до цели (1750 ккал).\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
         "📈 /week — отчёт за неделю"
@@ -72,13 +71,13 @@ async def process_food(message: types.Message):
     
     prompt = (
         f"Ты профессиональный спортивный нутрициолог. Проанализируй съеденное блюдо: '{text}'. "
-        "Верни ответ **исключительно** в формате JSON без лишнего текста и без markdown-оформления с тремя бэктиками, вот так:\n"
+        "Верни ответ СТРОГО в формате JSON без какого-либо дополнительного текста, используя только следующие ключи:\n"
         "{\n"
-        '  "calories": число (ккал),\n'
-        '  "protein": число (белки в граммах),\n'
-        '  "fat": число (жиры в граммах),\n'
-        '  "carbs": число (углеводы в граммах),\n'
-        '  "description": "краткое описание для отчета"\n'
+        '  "calories": 0,\n'
+        '  "protein": 0.0,\n'
+        '  "fat": 0.0,\n'
+        '  "carbs": 0.0,\n'
+        '  "description": "описание"\n'
         "}"
     )
     
@@ -89,7 +88,12 @@ async def process_food(message: types.Message):
             temperature=0.1
         )
         response_text = completion.choices[0].message.content.strip()
-        response_text = response_text.replace("```json", "").replace("```", "").strip()
+        
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0].strip()
+            
         data = json.loads(response_text)
         
         today = datetime.now().strftime("%Y-%m-%d")
@@ -98,10 +102,10 @@ async def process_food(message: types.Message):
             
         user_logs[user_id].append({
             "date": today,
-            "calories": data["calories"],
-            "protein": data["protein"],
-            "fat": data["fat"],
-            "carbs": data["carbs"]
+            "calories": float(data.get("calories", 0)),
+            "protein": float(data.get("protein", 0)),
+            "fat": float(data.get("fat", 0)),
+            "carbs": float(data.get("carbs", 0))
         })
         
         today_logs = [l for l in user_logs[user_id] if l["date"] == today]
@@ -109,14 +113,14 @@ async def process_food(message: types.Message):
         left = TARGET_CALORIES - total_cal
         
         await message.answer(
-            f"✅ Записал: *{data['description']}*\n\n"
-            f"🔥 **+{data['calories']} ккал** (Б: {data['protein']}г | Ж: {data['fat']}г | У: {data['carbs']}г)\n\n"
+            f"✅ Записал: *{data.get('description', text)}*\n\n"
+            f"🔥 **+{data.get('calories', 0)} ккал** (Б: {data.get('protein', 0)}г | Ж: {data.get('fat', 0)}г | У: {data.get('carbs', 0)}г)\n\n"
             f"📊 Всего за сегодня: **{total_cal} / {TARGET_CALORIES} ккал** (осталось: {left})"
         )
         
     except Exception as e:
-        logging.error(f"Error: {e}")
-        await message.answer("Бро, не смог распознать блюдо. Попробуй написать чуть точнее.")
+        logging.error(f"Error parsing food: {e}")
+        await message.answer("Бро, не смог распознать формат. Попробуй написать чуть проще.")
 
 # Веб-сервер-заглушка для удержания порта на Render
 def run_web_server():
@@ -131,8 +135,6 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    # Запускаем веб-сервер в фоне
     threading.Thread(target=run_web_server, daemon=True).start()
-    # Запускаем бота
     asyncio.run(main())
-  
+    
