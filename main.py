@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import os
 from datetime import datetime
@@ -8,16 +7,19 @@ import socketserver
 import threading
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from groq import Groq
+from google import genai
+from google.genai import types as genai_types
 
 # --- НАСТРОЙКИ ---
 TELEGRAM_TOKEN = "9054880366:AAG8slNCtvq7DjyMLfa1-8pxriN1lD02EWI"
-GROQ_API_KEY = "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"
-TARGET_CALORIES = 1750  # Цель по калориям
+GEMINI_API_KEY = "AQ.Ab8RN6K-xJ1BVzriY5Sg7w4AGJ8sOrLXDt7wLLkDvRyr2PL2Ww"
+TARGET_CALORIES = 1750  # Твоя цель по калориям
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
-groq_client = Groq(api_key=GROQ_API_KEY)
+
+# Инициализация клиента Google GenAI
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 user_logs = {}
 
@@ -26,8 +28,8 @@ logging.basicConfig(level=logging.INFO)
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Твой облачный бот-нутрициолог запущен и работает.\n\n"
-        "Напиши текстом, что ты съел, а я посчитаю КБЖУ, запишу в статистику и подскажу остаток до цели (1750 ккал).\n\n"
+        "Здорово, бро! Бот переведен на стабильный Google Gemini и полностью готов к работе.\n\n"
+        "Напиши текстом, что ты съел (любые блюда, рецепты или граммовки), а я посчитаю КБЖУ, запишу в статистику и подскажу остаток до цели (1750 ккал).\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
         "📈 /week — отчёт за неделю"
@@ -62,7 +64,7 @@ async def cmd_status(message: types.Message):
 
 @dp.message(Command("week"))
 async def cmd_week(message: types.Message):
-    await message.answer("📈 **Еженедельный отчет:**\nВсе данные под контролем, держись отлично!")
+    await message.answer("📈 **Еженедельный отчет:**\nВсе данные под контролем, держишься отлично!")
 
 @dp.message()
 async def process_food(message: types.Message):
@@ -70,21 +72,19 @@ async def process_food(message: types.Message):
     text = message.text
     
     prompt = (
-        f"Ты профессиональный нутрициолог. Оцени порцию: '{text}'. "
+        f"Ты профессиональный нутрициолог. Оцени порцию или продукт по запросу: '{text}'. "
         "Напиши результат строго в одну строчку через запятую в таком формате: "
-        "калории (число), белки (число), жиры (число), углеводы (число), название блюда. "
+        "калории (число), белки (число), жиры (число), углеводы (число), название блюда с граммами. "
         "Пример: 450, 25.5, 12.0, 50.2, Лаваш с сыром и лососем. "
-        "Никаких других слов, только эти 5 элементов через запятую."
+        "Никаких других слов, объяснений или знаков препинания в начале, только эти 5 элементов через запятую."
     )
     
     try:
-        # Используем универсальный эндпоинт и базовую модель
-        completion = groq_client.chat.completions.create(
-            model="llama3-8b-8192",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
+        response = ai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
         )
-        response_text = completion.choices[0].message.content.strip()
+        response_text = response.text.strip()
         
         parts = [p.strip() for p in response_text.split(',')]
         if len(parts) >= 5:
@@ -94,8 +94,7 @@ async def process_food(message: types.Message):
             carbs = float(parts[3])
             desc = ", ".join(parts[4:])
         else:
-            # Если ИИ ответил криво, парсим цифры грубо
-            cal, protein, fat, carbs, desc = 400, 20.0, 15.0, 40.0, text
+            cal, protein, fat, carbs, desc = 350, 20.0, 10.0, 35.0, text
 
         today = datetime.now().strftime("%Y-%m-%d")
         if user_id not in user_logs:
@@ -120,36 +119,8 @@ async def process_food(message: types.Message):
         )
         
     except Exception as e:
-        # Если модель недоступна, делаем умный расчет по ключевым словам в тексте
-        text_lower = text.lower()
-        if "борщ" in text_lower:
-            cal, protein, fat, carbs, desc = 250, 12.0, 10.0, 25.0, "Борщ"
-        elif "тако" in text_lower or "лаваш" in text_lower:
-            cal, protein, fat, carbs, desc = 450, 25.0, 18.0, 45.0, text
-        else:
-            cal, protein, fat, carbs, desc = 350, 20.0, 12.0, 35.0, text
-
-        today = datetime.now().strftime("%Y-%m-%d")
-        if user_id not in user_logs:
-            user_logs[user_id] = []
-            
-        user_logs[user_id].append({
-            "date": today,
-            "calories": cal,
-            "protein": protein,
-            "fat": fat,
-            "carbs": carbs
-        })
-        
-        today_logs = [l for l in user_logs[user_id] if l["date"] == today]
-        total_cal = sum(item["calories"] for item in today_logs)
-        left = TARGET_CALORIES - total_cal
-        
-        await message.answer(
-            f"✅ Записал: *{desc}*\n\n"
-            f"🔥 **+{cal:.0f} ккал** (Б: {protein}г | Ж: {fat}г | У: {carbs}г)\n\n"
-            f"📊 Всего за сегодня: **{total_cal:.0f} / {TARGET_CALORIES} ккал** (осталось: {left:.0f})"
-        )
+        logging.error(f"Error parsing food with Gemini: {e}")
+        await message.answer(f"⚠️ Ошибка обработки запроса ИИ: {str(e)}")
 
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
@@ -159,9 +130,10 @@ def run_web_server():
         httpd.serve_forever()
 
 async def main():
-    print("Облачный бот запущен и слушает Telegram!")
+    print("Облачный бот на Gemini запущен и слушает Telegram!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
     asyncio.run(main())
+    
