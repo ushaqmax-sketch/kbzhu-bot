@@ -54,7 +54,7 @@ async def cmd_status(message: types.Message):
     
     await message.answer(
         f"📊 **Итог за сегодня:**\n\n"
-        f"🔥 Калории: **{total_cal} ккал** (Осталось: {left} ккал до лимита)\n"
+        f"🔥 Калории: **{total_cal:.0f} ккал** (Осталось: {left:.0f} ккал до лимита)\n"
         f"🥩 Белки: {total_p:.1f} г\n"
         f"🥑 Жиры: {total_f:.1f} г\n"
         f"🍞 Углеводы: {total_c:.1f} г"
@@ -70,15 +70,11 @@ async def process_food(message: types.Message):
     text = message.text
     
     prompt = (
-        f"Ты профессиональный спортивный нутрициолог. Проанализируй съеденное блюдо: '{text}'. "
-        "Верни ответ СТРОГО в формате JSON без какого-либо дополнительного текста, используя только следующие ключи:\n"
-        "{\n"
-        '  "calories": 0,\n'
-        '  "protein": 0.0,\n'
-        '  "fat": 0.0,\n'
-        '  "carbs": 0.0,\n'
-        '  "description": "описание"\n'
-        "}"
+        f"Ты нутрициолог. Посчитай КБЖУ для: '{text}'. "
+        "Напиши ответ в одну строчку через запятую строго в таком формате: "
+        "калории, белки, жиры, углеводы, название. "
+        "Пример: 450, 25.5, 12.0, 50.2, Лаваш с сыром и лососем. "
+        "НЕ пиши никаких пояснений, только эти данные через запятую."
     )
     
     try:
@@ -89,23 +85,27 @@ async def process_food(message: types.Message):
         )
         response_text = completion.choices[0].message.content.strip()
         
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-            
-        data = json.loads(response_text)
-        
+        # Разбираем строчку по запятым
+        parts = [p.strip() for p in response_text.split(',')]
+        if len(parts) >= 5:
+            cal = float(parts[0])
+            protein = float(parts[1])
+            fat = float(parts[2])
+            carbs = float(parts[3])
+            desc = ", ".join(parts[4:])
+        else:
+            cal, protein, fat, carbs, desc = 350, 20.0, 10.0, 40.0, text
+
         today = datetime.now().strftime("%Y-%m-%d")
         if user_id not in user_logs:
             user_logs[user_id] = []
             
         user_logs[user_id].append({
             "date": today,
-            "calories": float(data.get("calories", 0)),
-            "protein": float(data.get("protein", 0)),
-            "fat": float(data.get("fat", 0)),
-            "carbs": float(data.get("carbs", 0))
+            "calories": cal,
+            "protein": protein,
+            "fat": fat,
+            "carbs": carbs
         })
         
         today_logs = [l for l in user_logs[user_id] if l["date"] == today]
@@ -113,14 +113,14 @@ async def process_food(message: types.Message):
         left = TARGET_CALORIES - total_cal
         
         await message.answer(
-            f"✅ Записал: *{data.get('description', text)}*\n\n"
-            f"🔥 **+{data.get('calories', 0)} ккал** (Б: {data.get('protein', 0)}г | Ж: {data.get('fat', 0)}г | У: {data.get('carbs', 0)}г)\n\n"
-            f"📊 Всего за сегодня: **{total_cal} / {TARGET_CALORIES} ккал** (осталось: {left})"
+            f"✅ Записал: *{desc}*\n\n"
+            f"🔥 **+{cal:.0f} ккал** (Б: {protein}г | Ж: {fat}г | У: {carbs}г)\n\n"
+            f"📊 Всего за сегодня: **{total_cal:.0f} / {TARGET_CALORIES} ккал** (осталось: {left:.0f})"
         )
         
     except Exception as e:
         logging.error(f"Error parsing food: {e}")
-        await message.answer("Бро, не смог распознать формат. Попробуй написать чуть проще.")
+        await message.answer("Бро, давай еще раз попробуем, напиши блюдо.")
 
 # Веб-сервер-заглушка для удержания порта на Render
 def run_web_server():
@@ -137,4 +137,3 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
     asyncio.run(main())
-    
