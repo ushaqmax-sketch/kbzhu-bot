@@ -77,12 +77,34 @@ async def process_food(message: types.Message):
         "НЕ пиши никаких пояснений, только эти данные через запятую."
     )
     
+    models_to_try = [
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "llama3-70b-8192",
+        "llama3-8b-8192",
+        "gemma2-9b-it"
+    ]
+    
+    completion = None
+    last_error = None
+    
+    for model_name in models_to_try:
+        try:
+            completion = groq_client.chat.completions.create(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1
+            )
+            break
+        except Exception as e:
+            last_error = e
+            continue
+            
+    if not completion:
+        await message.answer(f"⚠️ Ошибка отладки: все модели отклонены. {str(last_error)}")
+        return
+
     try:
-        completion = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",  # Самая актуальная и мощная модель
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1
-        )
         response_text = completion.choices[0].message.content.strip()
         
         parts = [p.strip() for p in response_text.split(',')]
@@ -119,9 +141,8 @@ async def process_food(message: types.Message):
         
     except Exception as e:
         logging.error(f"Error parsing food: {e}")
-        await message.answer(f"⚠️ Ошибка отладки: {str(e)}")
+        await message.answer(f"⚠️ Ошибка обработки: {str(e)}")
 
-# Веб-сервер-заглушка для удержания порта на Render
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
     Handler = http.server.SimpleHTTPRequestHandler
