@@ -79,7 +79,7 @@ async def process_food(message: types.Message):
     
     try:
         completion = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",  # Актуальная и быстрая модель
+            model="llama3-8b-8192",  # Проверенная базовая модель Groq
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1
         )
