@@ -290,10 +290,10 @@ def run_web_server():
 
 async def main():
     print("Бот на Gemini запущен!")
-    # Бесконечный цикл с защитой от конфликтов Telegram (если старая копия еще висела)
+    # Бесконечный цикл с защитой от конфликтов Telegram
     while True:
         try:
-            await dp.start_polling(bot,, skip_updates=True)
+            await dp.start_polling(bot, skip_updates=True)
         except TelegramConflictError:
             print("Конфликт сессий! Ждем 5 секунд освобождения потока...")
             await asyncio.sleep(5)
