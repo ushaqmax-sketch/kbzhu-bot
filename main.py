@@ -242,6 +242,7 @@ async def process_food(message: types.Message):
         source_badge = "🤖 Gemini API"
         
         try:
+            try:
             prompt = (
                 "Посчитай КБЖУ для продукта: "
                 f"'{text}'. "
@@ -259,10 +260,12 @@ async def process_food(message: types.Message):
             if len(numbers) >= 4:
                 cal, protein, fat, carbs = numbers[0], numbers[1], numbers[2], numbers[3]
             else:
-                raise ValueError("Not enough numbers from AI")
+                raise ValueError(f"Ответ ИИ не содержит 4 чисел. Сырой текст: '{response_text}'")
+                
         except Exception as e:
             logging.error(f"API Error: {e}")
-            await message.answer(f"⚠️ Ошибка API: {str(e)}")
+            # Выведем точную ошибку в чат, чтобы увидеть причину
+            await message.answer(f"⚠️ Ошибка Gemini: {str(e)}")
             cal, protein, fat, carbs = smart_fallback_calculate(text)
             source_badge = "📚 Справочник (fallback)"
 
