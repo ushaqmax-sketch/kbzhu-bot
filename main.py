@@ -7,19 +7,18 @@ import socketserver
 import threading
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from openai import OpenAI
+from google import genai
 
 # --- НАСТРОЙКИ ---
 TELEGRAM_TOKEN = "9054880366:AAG8slNCtvq7DjyMLfa1-8pxriN1lD02EWI"
-# Ключ автоматически берется из защищенных переменных окружения Render
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+# Ключ автоматически подтягивается из защищенных настроек Render (GEMINI_API_KEY)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TARGET_CALORIES = 1750  # Твой дневной лимит калорий
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
-
+ai_client = genai.Client(api_key=GEMINI_API_KEY)
 user_logs = {}
 
 logging.basicConfig(level=logging.INFO)
@@ -27,7 +26,7 @@ logging.basicConfig(level=logging.INFO)
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Твой бот для подсчета КБЖУ на базе ChatGPT запущен и готов к работе.\n\n"
+        "Здорово, бро! Твой бот на базе бесплатного Gemini запущен и готов к работе.\n\n"
         "Просто напиши текстом, что ты съел, а я посчитаю калории, белки, жиры, углеводы, запишу в дневник и подскажу остаток до цели (1750 ккал).\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
@@ -71,25 +70,21 @@ async def process_food(message: types.Message):
     text = message.text
     
     try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Ты профессиональный нутрициолог. Оцени порцию или продукт по запросу пользователя. "
-                        "Напиши результат строго в одну строчку через запятую в таком формате: "
-                        "калории (число), белки (число), жиры (число), углеводы (число), название блюда с граммами. "
-                        "Пример: 450, 25.5, 12.0, 50.2, Лаваш с сыром и лососем. "
-                        "Никаких других слов, объяснений или знаков препинания в начале, только эти 5 элементов через запятую."
-                    )
-                },
-                {"role": "user", "content": text}
-            ],
-            temperature=0.2
+        prompt = (
+            "Ты профессиональный нутрициолог. Оцени порцию или продукт по запросу пользователя: "
+            f"'{text}'. "
+            "Напиши результат строго в одну строчку через запятую в таком формате: "
+            "калории (число), белки (число), жиры (число), углеводы (число), название блюда с граммами. "
+            "Пример: 450, 25.5, 12.0, 50.2, Лаваш с сыром и лососем. "
+            "Никаких других слов, объяснений или знаков препинания в начале, только эти 5 элементов через запятую."
         )
         
-        response_text = response.choices[0].message.content.strip()
+        response = ai_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt,
+        )
+        
+        response_text = response.text.strip()
         
         parts = [p.strip() for p in response_text.split(',')]
         if len(parts) >= 5:
@@ -124,8 +119,8 @@ async def process_food(message: types.Message):
         )
         
     except Exception as e:
-        logging.error(f"Error parsing food with OpenAI: {e}")
-        await message.answer(f"⚠️ Ошибка OpenAI API: {str(e)}")
+        logging.error(f"Error parsing food with Gemini: {e}")
+        await message.answer(f"⚠️ Ошибка API: {str(e)}")
 
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
@@ -135,7 +130,7 @@ def run_web_server():
         httpd.serve_forever()
 
 async def main():
-    print("Бот на ChatGPT запущен!")
+    print("Бот на Gemini запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
