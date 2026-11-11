@@ -261,7 +261,8 @@ async def process_food(message: types.Message):
             else:
                 raise ValueError("Not enough numbers from AI")
         except Exception as e:
-            logging.error(f"API Error (using smart fallback): {e}")
+            logging.error(f"API Error: {e}")
+            await message.answer(f"⚠️ Ошибка API: {str(e)}")
             cal, protein, fat, carbs = smart_fallback_calculate(text)
             source_badge = "📚 Справочник (fallback)"
 
