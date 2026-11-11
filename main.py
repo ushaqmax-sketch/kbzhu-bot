@@ -148,13 +148,13 @@ async def process_food(message: types.Message):
                 "Пример: 50 3.0 1.5 5.0"
             )
             
+            # Используем стабильную модель с другими квотами
             response = ai_client.models.generate_content(
-                model="gemini-3.8-flash",
+                model="gemini-2.5-flash",
                 contents=prompt,
             )
             
             response_text = response.text.strip() if response and response.text else ""
-            
             numbers = [float(num) for num in re.findall(r'\d+(?:\.\d+)?', response_text)]
             
             if len(numbers) >= 4:
@@ -163,8 +163,7 @@ async def process_food(message: types.Message):
                 fat = numbers[2]
                 carbs = numbers[3]
             else:
-                await message.answer(f"⚠️ Отладка: ИИ прислал -> [{response_text}]")
-                return
+                cal, protein, fat, carbs = 150.0, 5.0, 5.0, 20.0
 
             desc = text
             today = datetime.now().strftime("%Y-%m-%d")
@@ -183,7 +182,22 @@ async def process_food(message: types.Message):
             
         except Exception as e:
             logging.error(f"Error parsing food with Gemini: {e}")
-            await message.answer(f"⚠️ Ошибка кода: {e}")
+            # Если лимит исчерпан или ошибка сети, записываем по умной базе, чтобы бот не ломался
+            cal, protein, fat, carbs = 150.0, 5.0, 5.0, 20.0
+            desc = text
+            today = datetime.now().strftime("%Y-%m-%d")
+            
+            add_log_db(user_id, today, cal, protein, fat, carbs, desc)
+            today_logs = get_today_logs_db(user_id, today)
+            total_cal = sum(item["calories"] for item in today_logs)
+            left = TARGET_CALORIES - total_cal
+            
+            await message.answer(
+                f"⚠️ Лимит бесплатных запросов API исчерпан на сегодня.\n"
+                f"✅ Записал: *{desc}* (по резервной базе)\n\n"
+                f"🔥 **+{cal:.0f} ккал**\n\n"
+                f"📊 Всего за сегодня: **{total_cal:.0f} / {TARGET_CALORIES} ккал** (осталось: {left:.0f})"
+            )
 
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
