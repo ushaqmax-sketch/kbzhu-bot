@@ -8,6 +8,7 @@ import socketserver
 import threading
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.exceptions import TelegramConflictError
 import re
 from google import genai
 
@@ -248,7 +249,6 @@ async def process_food(message: types.Message):
                 "Напиши в ответ ТОЛЬКО 4 числа через пробел (калории, белки, жиры, углеводы). Больше ничего."
             )
             
-            # Используем стабильную рабочую модель
             response = ai_client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=prompt,
@@ -290,7 +290,16 @@ def run_web_server():
 
 async def main():
     print("Бот на Gemini запущен!")
-    await dp.start_polling(bot)
+    # Бесконечный цикл с защитой от конфликтов Telegram (если старая копия еще висела)
+    while True:
+        try:
+            await dp.start_polling(bot,, skip_updates=True)
+        except TelegramConflictError:
+            print("Конфликт сессий! Ждем 5 секунд освобождения потока...")
+            await asyncio.sleep(5)
+        except Exception as e:
+            print(f"Ошибка polling: {e}")
+            await asyncio.sleep(3)
 
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
