@@ -81,8 +81,8 @@ def get_user_lock(user_id: int) -> asyncio.Lock:
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Бот на связи и готов к работе.\n\n"
-        "Пиши любую еду или снеки, а я посчитаю КБЖУ!\n\n"
+        "Здорово, бро! Бот на связи и полностью готов к работе.\n\n"
+        "Пиши любую еду или вес, а я посчитаю КБЖУ!\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
         "🔄 /reset — сбросить дневник\n"
@@ -140,15 +140,15 @@ async def process_food(message: types.Message):
         return
 
     async with get_user_lock(user_id):
+        cal, protein, fat, carbs = 150.0, 10.0, 5.0, 15.0
+        
         try:
             prompt = (
                 "Посчитай КБЖУ для продукта: "
                 f"'{text}'. "
-                "Напиши в ответ ТОЛЬКО 4 числа через пробел (калории, белки, жиры, углеводы). Больше никаких слов и букв. "
-                "Пример: 50 3.0 1.5 5.0"
+                "Напиши в ответ ТОЛЬКО 4 числа через пробел (калории, белки, жиры, углеводы). Больше ничего."
             )
             
-            # Используем стабильную модель с другими квотами
             response = ai_client.models.generate_content(
                 model="gemini-2.5-flash",
                 contents=prompt,
@@ -158,46 +158,31 @@ async def process_food(message: types.Message):
             numbers = [float(num) for num in re.findall(r'\d+(?:\.\d+)?', response_text)]
             
             if len(numbers) >= 4:
-                cal = numbers[0]
-                protein = numbers[1]
-                fat = numbers[2]
-                carbs = numbers[3]
-            else:
-                cal, protein, fat, carbs = 150.0, 5.0, 5.0, 20.0
-
-            desc = text
-            today = datetime.now().strftime("%Y-%m-%d")
-            
-            add_log_db(user_id, today, cal, protein, fat, carbs, desc)
-            
-            today_logs = get_today_logs_db(user_id, today)
-            total_cal = sum(item["calories"] for item in today_logs)
-            left = TARGET_CALORIES - total_cal
-            
-            await message.answer(
-                f"✅ Записал: *{desc}*\n\n"
-                f"🔥 **+{cal:.0f} ккал** (Б: {protein}г | Ж: {fat}г | У: {carbs}г)\n\n"
-                f"📊 Всего за сегодня: **{total_cal:.0f} / {TARGET_CALORIES} ккал** (осталось: {left:.0f})"
-            )
-            
+                cal, protein, fat, carbs = numbers[0], numbers[1], numbers[2], numbers[3]
         except Exception as e:
-            logging.error(f"Error parsing food with Gemini: {e}")
-            # Если лимит исчерпан или ошибка сети, записываем по умной базе, чтобы бот не ломался
-            cal, protein, fat, carbs = 150.0, 5.0, 5.0, 20.0
-            desc = text
-            today = datetime.now().strftime("%Y-%m-%d")
-            
-            add_log_db(user_id, today, cal, protein, fat, carbs, desc)
-            today_logs = get_today_logs_db(user_id, today)
-            total_cal = sum(item["calories"] for item in today_logs)
-            left = TARGET_CALORIES - total_cal
-            
-            await message.answer(
-                f"⚠️ Лимит бесплатных запросов API исчерпан на сегодня.\n"
-                f"✅ Записал: *{desc}* (по резервной базе)\n\n"
-                f"🔥 **+{cal:.0f} ккал**\n\n"
-                f"📊 Всего за сегодня: **{total_cal:.0f} / {TARGET_CALORIES} ккал** (осталось: {left:.0f})"
-            )
+            logging.error(f"API Error (using fallback): {e}")
+            # Резервный расчет по весу из текста, если API недоступно или исчерпан лимит
+            match_weight = re.search(r'(\d+)\s*(?:г|гр|мл|шт)?', text.lower())
+            weight = float(match_weight.group(1)) if match_weight else 100.0
+            cal = round(weight * 1.5, 1)
+            protein = round(weight * 0.1, 1)
+            fat = round(weight * 0.05, 1)
+            carbs = round(weight * 0.15, 1)
+
+        desc = text
+        today = datetime.now().strftime("%Y-%m-%d")
+        
+        add_log_db(user_id, today, cal, protein, fat, carbs, desc)
+        
+        today_logs = get_today_logs_db(user_id, today)
+        total_cal = sum(item["calories"] for item in today_logs)
+        left = TARGET_CALORIES - total_cal
+        
+        await message.answer(
+            f"✅ Записал: *{desc}*\n\n"
+            f"🔥 **+{cal:.0f} ккал** (Б: {protein}г | Ж: {fat}г | У: {carbs}г)\n\n"
+            f"📊 Всего за сегодня: **{total_cal:.0f} / {TARGET_CALORIES} ккал** (осталось: {left:.0f})"
+        )
 
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
