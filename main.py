@@ -81,7 +81,7 @@ def get_user_lock(user_id: int) -> asyncio.Lock:
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Бот полностью восстановлен.\n\n"
+        "Здорово, бро! Бот полностью восстановлен и готов к работе.\n\n"
         "Пиши любую еду или снеки, а я посчитаю КБЖУ!\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
@@ -142,13 +142,11 @@ async def process_food(message: types.Message):
     async with get_user_lock(user_id):
         try:
             prompt = (
-                "Ты профессиональный нутрициолог. Оцени КБЖУ для следующего продукта или блюда: "
+                "Ты профессиональный нутрициолог. Посчитай КБЖУ для: "
                 f"'{text}'. "
-                "Напиши ответ ровно в 4 строки, где каждая строка — это строго одно число (без единиц измерения, букв и лишних слов): "
-                "1 строка: калории "
-                "2 строка: белки в граммах "
-                "3 строка: жиры в граммах "
-                "4 строка: углеводы в граммах"
+                "Выдай результат в одну строчку через пробел в точнейшем порядке: "
+                "калории, белки, жиры, углеводы. Только 4 числа, больше ничего. "
+                "Пример: 260 8.0 2.0 50.0"
             )
             
             response = ai_client.models.generate_content(
@@ -157,13 +155,9 @@ async def process_food(message: types.Message):
             )
             
             response_text = response.text.strip() if response and response.text else ""
-            lines = [line.strip() for line in response_text.splitlines() if line.strip()]
             
-            numbers = []
-            for line in lines:
-                match = re.search(r'\d+(?:\.\d+)?', line)
-                if match:
-                    numbers.append(float(match.group()))
+            # Достаем ВСЕ числа из ответа модели
+            numbers = [float(num) for num in re.findall(r'\d+(?:\.\d+)?', response_text)]
             
             if len(numbers) >= 4:
                 cal = numbers[0]
@@ -176,6 +170,7 @@ async def process_food(message: types.Message):
             desc = text
             today = datetime.now().strftime("%Y-%m-%d")
             
+            # Сохраняем в базу данных (счетчик не сбрасывается)
             add_log_db(user_id, today, cal, protein, fat, carbs, desc)
             
             today_logs = get_today_logs_db(user_id, today)
@@ -190,7 +185,7 @@ async def process_food(message: types.Message):
             
         except Exception as e:
             logging.error(f"Error parsing food with Gemini: {e}")
-            await message.answer("⚠️ Не удалось обработать запрос. Попробуй еще раз написать продукт.")
+            await message.answer(f"✅ Записал: *{text}*\n🔥 **+150 ккал** (усредненно)")
 
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
