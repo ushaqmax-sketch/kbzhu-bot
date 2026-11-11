@@ -32,7 +32,7 @@ def get_user_lock(user_id: int) -> asyncio.Lock:
 async def cmd_start(message: types.Message):
     await message.answer(
         "Здорово, бро! Бот работает в супер-надежном режиме.\n\n"
-        "Пиши текстом любую еду (даже несколько позиций сразу), а я всё посчитаю!\n\n"
+        "Пиши текстом любую еду (хоть в несколько строк), а я всё посчитаю!\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
         "🔄 /reset — сбросить дневник\n"
@@ -94,12 +94,13 @@ async def process_food(message: types.Message):
     async with get_user_lock(user_id):
         try:
             prompt = (
-                "Ты профессиональный нутрициолог. Оцени порцию или набор продуктов по запросу: "
+                "Ты профессиональный нутрициолог. Пользователь перечислил продукты (возможно, списком): "
                 f"'{text}'. "
-                "Выдай ответ СТРОГО в одну строчку, разделяя поля вертикальной чертой (|) в таком формате: "
-                "калории | белки | жиры | углеводы | название блюда с граммами. "
-                "Пример: 500 | 15.0 | 20.0 | 60.0 | Чипсы с колой. "
-                "Никаких лишних слов, пояснений или других знаков разделителей, только 5 частей через символ '|'."
+                "Посчитай общую калорийность, белки, жиры и углеводы для всего этого набора вместе. "
+                "Выдай ответ СТРОГО В ОДНУ СТРОЧКУ (без переносов строк), разделяя поля вертикальной чертой (|) в таком формате: "
+                "калории | белки | жиры | углеводы | общее название блюда или набора. "
+                "Пример: 350 | 20.0 | 15.0 | 30.0 | Лаваш с сыром и лососем. "
+                "Никаких лишних слов, пояснений или переносов строк, только 5 частей через символ '|' в одну строку."
             )
             
             response = ai_client.models.generate_content(
@@ -108,6 +109,9 @@ async def process_food(message: types.Message):
             )
             
             response_text = response.text.strip() if response and response.text else ""
+            # Убираем возможные переносы строк из ответа ИИ, склеивая в одну строку
+            response_text = " ".join(response_text.splitlines())
+            
             parts = [p.strip() for p in response_text.split('|')]
             
             if len(parts) >= 5:
@@ -117,8 +121,7 @@ async def process_food(message: types.Message):
                 carbs = float(parts[3])
                 desc = parts[4]
             else:
-                # Запасной вариант на случай, если ИИ ответит иначе
-                cal, protein, fat, carbs, desc = 300, 10.0, 10.0, 40.0, text
+                cal, protein, fat, carbs, desc = 300, 15.0, 10.0, 25.0, text
 
             today = datetime.now().strftime("%Y-%m-%d")
             if user_id not in user_logs:
@@ -160,3 +163,4 @@ async def main():
 if __name__ == "__main__":
     threading.Thread(target=run_web_server, daemon=True).start()
     asyncio.run(main())
+            
