@@ -78,6 +78,39 @@ def get_user_lock(user_id: int) -> asyncio.Lock:
         user_locks[user_id] = asyncio.Lock()
     return user_locks[user_id]
 
+# Умный офлайн-расчет с учетом калорийности продуктов (на 100г)
+def smart_fallback_calculate(text: str):
+    text_lower = text.lower()
+    
+    # Ищем вес в граммах/мл из текста (например, "масло 10г" -> 10)
+    match_weight = re.search(r'(\d+)\s*(?:г|гр|мл|шт)?', text_lower)
+    weight = float(match_weight.group(1)) if match_weight else 100.0
+    k = weight / 100.0  # коэффициент от веса
+
+    # Базовые коэффициенты на 100г: (ккал, белки, жиры, углеводы)
+    if any(w in text_lower for w in ['масло', 'олия', 'оливковое', 'сливочное']):
+        cal, p, f, c = 900.0, 0.0, 100.0, 0.0
+    elif any(w in text_lower for w in ['сало', 'жир']):
+        cal, p, f, c = 800.0, 1.5, 90.0, 0.0
+    elif any(w in text_lower for w in ['орех', 'арахис', 'миндаль']):
+        cal, p, f, c = 600.0, 20.0, 50.0, 15.0
+    elif any(w in text_lower for w in ['шоколад', 'конфет', 'сахар']):
+        cal, p, f, c = 500.0, 5.0, 30.0, 60.0
+    elif any(w in text_lower for w in ['хлеб', 'булочк', 'сухарик']):
+        cal, p, f, c = 260.0, 8.0, 3.0, 50.0
+    elif any(w in text_lower for w in ['картошк', 'картофель']):
+        cal, p, f, c = 120.0, 2.5, 4.0, 18.0
+    elif any(w in text_lower for w in ['мяс', 'филе', 'куриц', 'говядин', 'рыб', 'лосось']):
+        cal, p, f, c = 150.0, 22.0, 5.0, 0.0
+    elif any(w in text_lower for w in ['гречк', 'рис', 'овсянк', 'каш', 'булгур', 'макарон']):
+        cal, p, f, c = 130.0, 4.0, 1.5, 25.0
+    elif any(w in text_lower for w in ['творог', 'йогурт', 'молоко', 'кефир']):
+        cal, p, f, c = 80.0, 9.0, 3.0, 4.0
+    else:
+        cal, p, f, c = 150.0, 5.0, 5.0, 20.0  ч усредненное
+
+    return round(cal * k, 1), round(p * k, 1), round(f * k, 1), round(c * k, 1)
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
@@ -159,15 +192,12 @@ async def process_food(message: types.Message):
             
             if len(numbers) >= 4:
                 cal, protein, fat, carbs = numbers[0], numbers[1], numbers[2], numbers[3]
+            else:
+                raise ValueError("Not enough numbers from AI")
         except Exception as e:
-            logging.error(f"API Error (using fallback): {e}")
-            # Резервный расчет по весу из текста, если API недоступно или исчерпан лимит
-            match_weight = re.search(r'(\d+)\s*(?:г|гр|мл|шт)?', text.lower())
-            weight = float(match_weight.group(1)) if match_weight else 100.0
-            cal = round(weight * 1.5, 1)
-            protein = round(weight * 0.1, 1)
-            fat = round(weight * 0.05, 1)
-            carbs = round(weight * 0.15, 1)
+            logging.error(f"API Error (using smart fallback): {e}")
+            # Умный расчет по справочнику при исчерпании лимитов API
+            cal, protein, fat, carbs = smart_fallback_calculate(text)
 
         desc = text
         today = datetime.now().strftime("%Y-%m-%d")
