@@ -250,7 +250,8 @@ async def process_food(message: types.Message):
             )
             
             response = ai_client.models.generate_content(
-                model="gemini-1.5-flash",
+                response = ai_client.models.generate_content(
+                model="gemini-2.5-flash",  
                 contents=prompt,
             )
             
