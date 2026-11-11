@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import sqlite3
 from datetime import datetime
 import http.server
 import socketserver
@@ -18,10 +19,58 @@ bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
-user_logs = {}
 user_locks = {}
 
 logging.basicConfig(level=logging.INFO)
+
+# --- БАЗА ДАННЫХ (SQLite для защиты от стирания при перезагрузках) ---
+def init_db():
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS food_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            date TEXT,
+            calories REAL,
+            protein REAL,
+            fat REAL,
+            carbs REAL,
+            description TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def add_log_db(user_id, date, cal, protein, fat, carbs, desc):
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    cursor.execute(
+        'INSERT INTO food_logs (user_id, date, calories, protein, fat, carbs, description) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        (user_id, date, cal, protein, fat, carbs, desc)
+    )
+    conn.commit()
+    conn.close()
+
+def get_today_logs_db(user_id, date):
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    cursor.execute(
+        'SELECT calories, protein, fat, carbs FROM food_logs WHERE user_id = ? AND date = ?',
+        (user_id, date)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [{"calories": r[0], "protein": r[1], "fat": r[2], "carbs": r[3]} for r in rows]
+
+def clear_today_logs_db(user_id, date):
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM food_logs WHERE user_id = ? AND date = ?', (user_id, date))
+    conn.commit()
+    conn.close()
 
 def get_user_lock(user_id: int) -> asyncio.Lock:
     if user_id not in user_locks:
@@ -31,8 +80,8 @@ def get_user_lock(user_id: int) -> asyncio.Lock:
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Бот работает в супер-надежном режиме.\n\n"
-        "Пиши текстом любую еду (хоть в несколько строк), а я всё посчитаю!\n\n"
+        "Здорово, бро! База данных подключена, теперь память не сотрется.\n\n"
+        "Пиши любую еду (хоть списком), а я буду вести точный учет!\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
         "🔄 /reset — сбросить дневник\n"
@@ -44,8 +93,7 @@ async def cmd_status(message: types.Message):
     user_id = message.from_user.id
     async with get_user_lock(user_id):
         today = datetime.now().strftime("%Y-%m-%d")
-        logs = user_logs.get(user_id, [])
-        today_logs = [l for l in logs if l["date"] == today]
+        today_logs = get_today_logs_db(user_id, today)
         
         if not today_logs:
             await message.answer("Сегодня ты еще ничего не записывал в дневник.")
@@ -71,8 +119,7 @@ async def cmd_reset(message: types.Message):
     user_id = message.from_user.id
     async with get_user_lock(user_id):
         today = datetime.now().strftime("%Y-%m-%d")
-        if user_id in user_logs:
-            user_logs[user_id] = [l for l in user_logs[user_id] if l["date"] != today]
+        clear_today_logs_db(user_id, today)
             
     await message.answer("🔄 **Дневник за сегодня полностью сброшен!** Начинаем с чистого листа.")
 
@@ -109,7 +156,6 @@ async def process_food(message: types.Message):
             )
             
             response_text = response.text.strip() if response and response.text else ""
-            # Убираем возможные переносы строк из ответа ИИ, склеивая в одну строку
             response_text = " ".join(response_text.splitlines())
             
             parts = [p.strip() for p in response_text.split('|')]
@@ -124,18 +170,11 @@ async def process_food(message: types.Message):
                 cal, protein, fat, carbs, desc = 300, 15.0, 10.0, 25.0, text
 
             today = datetime.now().strftime("%Y-%m-%d")
-            if user_id not in user_logs:
-                user_logs[user_id] = []
-                
-            user_logs[user_id].append({
-                "date": today,
-                "calories": cal,
-                "protein": protein,
-                "fat": fat,
-                "carbs": carbs
-            })
             
-            today_logs = [l for l in user_logs[user_id] if l["date"] == today]
+            # Сохраняем в базу данных
+            add_log_db(user_id, today, cal, protein, fat, carbs, desc)
+            
+            today_logs = get_today_logs_db(user_id, today)
             total_cal = sum(item["calories"] for item in today_logs)
             left = TARGET_CALORIES - total_cal
             
@@ -157,7 +196,7 @@ def run_web_server():
         httpd.serve_forever()
 
 async def main():
-    print("Бот на Gemini запущен!")
+    print("Бот на Gemini с базой данных запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
