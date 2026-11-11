@@ -19,7 +19,7 @@ dp = Dispatcher()
 
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 user_logs = {}
-user_locks = {}  # Словарь блокировок для каждого пользователя (защита от гонки запросов)
+user_locks = {}
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,11 +31,11 @@ def get_user_lock(user_id: int) -> asyncio.Lock:
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Твой бот на базе бесплатного Gemini запущен и работает в группе в железобетонном режиме.\n\n"
-        "Просто пиши текстом, что ты съел, а я посчитаю калории, БЖУ и подскажу остаток до цели (1750 ккал).\n\n"
+        "Здорово, бро! Бот работает в супер-надежном режиме.\n\n"
+        "Пиши текстом любую еду (даже несколько позиций сразу), а я всё посчитаю!\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
-        "🔄 /reset — сбросить дневник за сегодня\n"
+        "🔄 /reset — сбросить дневник\n"
         "📈 /week — отчёт за неделю"
     )
 
@@ -91,16 +91,15 @@ async def process_food(message: types.Message):
     if text.startswith("/"):
         return
 
-    # Защита: обрабатываем сообщения пользователя строго по очереди
     async with get_user_lock(user_id):
         try:
             prompt = (
-                "Ты профессиональный нутрициолог. Оцени порцию или продукт по запросу пользователя: "
+                "Ты профессиональный нутрициолог. Оцени порцию или набор продуктов по запросу: "
                 f"'{text}'. "
-                "Напиши результат строго в одну строчку через запятую в таком формате: "
-                "калории (число), белки (число), жиры (число), углеводы (число), название блюда с граммами. "
-                "Пример: 350, 20.5, 10.0, 35.0, Картошка вареная с курицей 300 г. "
-                "Никаких других слов или объяснений в начале, только эти 5 элементов через запятую."
+                "Выдай ответ СТРОГО в одну строчку, разделяя поля вертикальной чертой (|) в таком формате: "
+                "калории | белки | жиры | углеводы | название блюда с граммами. "
+                "Пример: 500 | 15.0 | 20.0 | 60.0 | Чипсы с колой. "
+                "Никаких лишних слов, пояснений или других знаков разделителей, только 5 частей через символ '|'."
             )
             
             response = ai_client.models.generate_content(
@@ -109,19 +108,17 @@ async def process_food(message: types.Message):
             )
             
             response_text = response.text.strip() if response and response.text else ""
-            parts = [p.strip() for p in response_text.split(',')]
+            parts = [p.strip() for p in response_text.split('|')]
             
             if len(parts) >= 5:
-                try:
-                    cal = float(parts[0])
-                    protein = float(parts[1])
-                    fat = float(parts[2])
-                    carbs = float(parts[3])
-                    desc = ", ".join(parts[4:])
-                except ValueError:
-                    cal, protein, fat, carbs, desc = 350, 20.0, 10.0, 35.0, text
+                cal = float(parts[0])
+                protein = float(parts[1])
+                fat = float(parts[2])
+                carbs = float(parts[3])
+                desc = parts[4]
             else:
-                cal, protein, fat, carbs, desc = 350, 20.0, 10.0, 35.0, text
+                # Запасной вариант на случай, если ИИ ответит иначе
+                cal, protein, fat, carbs, desc = 300, 10.0, 10.0, 40.0, text
 
             today = datetime.now().strftime("%Y-%m-%d")
             if user_id not in user_logs:
