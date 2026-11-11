@@ -123,7 +123,7 @@ def ask_gemini_rest(prompt_text: str):
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Бот пересобран с нуля и готов к работе.\n\n"
+        "Здорово, бро! Бот исправлен и готов к работе.\n\n"
         "Команды:\n"
         "📊 /status — итог за день\n"
         "🔄 /reset — сбросить дневник"
@@ -163,6 +163,7 @@ async def process_food(message: types.Message):
     if not message.text or message.from_user.is_bot or message.text.startswith("/"):
         return
         
+    user_id = message.from_user.id  # <-- ВОТ ЭТУ СТРОКУ МЫ ДОБАВИЛИ
     text = message.text
     source_badge = "🤖 Gemini API"
     
