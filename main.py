@@ -107,7 +107,7 @@ def smart_fallback_calculate(text: str):
         cal, p, f, c = 42.0, 3.0, 1.0, 4.7
     elif 'молоко' in text_lower:
         cal, p, f, c = 60.0, 3.2, 3.2, 4.7
-    elif any(w in text_lower for w in ['творог', 'кефир', 'йогурт']):
+    elif any(w in text_lower for w in ['творог', 'кефир', 'йогурт', 'ряженк']):
         cal, p, f, c = 85.0, 15.0, 3.0, 3.5
 
     # 3. КАШИ И БАКАЛЕЯ (в отварном виде)
@@ -167,7 +167,7 @@ def smart_fallback_calculate(text: str):
         cal, p, f, c = 43.0, 1.5, 0.1, 8.8
 
     # 7. МЯСО И РЫБА
-    elif any(w in text_lower for w in ['мяс', 'филе', 'куриц', 'говядин', 'рыб', 'лосось']):
+    elif any(w in text_lower for w in ['мяс', 'филе', 'куриц', 'говядин', 'рыб', 'лосось', 'голень']):
         cal, p, f, c = 135.0, 21.0, 4.5, 0.0
 
     # ВСЕ ОСТАЛЬНОЕ УСРЕДНЕННОЕ
@@ -261,7 +261,7 @@ async def process_food(message: types.Message):
             else:
                 raise ValueError("Not enough numbers from AI")
         except Exception as e:
-            logging.error(f"API Error (using smart fallback): {e}")
+            logging.error(f"DETAILED API ERROR: {repr(e)}")
             cal, protein, fat, carbs = smart_fallback_calculate(text)
             source_badge = "📚 Справочник (fallback)"
 
