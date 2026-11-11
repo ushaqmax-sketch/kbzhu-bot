@@ -78,32 +78,99 @@ def get_user_lock(user_id: int) -> asyncio.Lock:
         user_locks[user_id] = asyncio.Lock()
     return user_locks[user_id]
 
-# Умный офлайн-расчет с учетом калорийности продуктов (на 100г)
+# --- РАСШИРЕННЫЙ ТОЧНЫЙ СПРАВОЧНИК (на 100г продукта) ---
 def smart_fallback_calculate(text: str):
     text_lower = text.lower()
     
     match_weight = re.search(r'(\d+)\s*(?:г|гр|мл|шт)?', text_lower)
     weight = float(match_weight.group(1)) if match_weight else 100.0
-    k = weight / 100.0
+    k = weight / 100.0  # коэффициент пересчета на массу
 
-    if any(w in text_lower for w in ['масло', 'олия', 'оливковое', 'сливочное']):
-        cal, p, f, c = 900.0, 0.0, 100.0, 0.0
-    elif any(w in text_lower for w in ['сало', 'жир']):
-        cal, p, f, c = 800.0, 1.5, 90.0, 0.0
-    elif any(w in text_lower for w in ['орех', 'арахис', 'миндаль']):
-        cal, p, f, c = 600.0, 20.0, 50.0, 15.0
-    elif any(w in text_lower for w in ['шоколад', 'конфет', 'сахар']):
-        cal, p, f, c = 500.0, 5.0, 30.0, 60.0
-    elif any(w in text_lower for w in ['хлеб', 'булочк', 'сухарик']):
-        cal, p, f, c = 260.0, 8.0, 3.0, 50.0
-    elif any(w in text_lower for w in ['картошк', 'картофель']):
-        cal, p, f, c = 120.0, 2.5, 4.0, 18.0
+    # 1. МАСЛА И ЖИРЫ
+    if any(w in text_lower for w in ['масло сливочное', 'масло']):
+        cal, p, f, c = 717.0, 0.5, 81.0, 0.8
+    elif any(w in text_lower for w in ['оливковое', 'подсолнечное', 'олия']):
+        cal, p, f, c = 884.0, 0.0, 100.0, 0.0
+    elif 'сало' in text_lower:
+        cal, p, f, c = 797.0, 2.4, 89.0, 0.0
+
+    # 2. СЫРЫ И МОЛОЧКА
+    elif 'сулугуни' in text_lower:
+        cal, p, f, c = 285.0, 20.5, 22.0, 0.0
+    elif 'гауда' in text_lower:
+        cal, p, f, c = 356.0, 24.9, 27.4, 2.2
+    elif 'российский' in text_lower:
+        cal, p, f, c = 363.0, 23.4, 29.5, 0.0
+    elif 'плавленый' in text_lower:
+        cal, p, f, c = 225.0, 10.0, 18.0, 4.0
+    elif 'молоко 1%' in text_lower or 'молоко 1' in text_lower:
+        cal, p, f, c = 42.0, 3.0, 1.0, 4.7
+    elif 'молоко' in text_lower:
+        cal, p, f, c = 60.0, 3.2, 3.2, 4.7
+    elif any(w in text_lower for w in ['творог', 'кефир', 'йогурт']):
+        cal, p, f, c = 85.0, 15.0, 3.0, 3.5
+
+    # 3. КАШИ И БАКАЛЕЯ (в отварном виде)
+    elif 'гречк' in text_lower:
+        cal, p, f, c = 103.0, 3.6, 0.7, 20.5
+    elif 'рис' in text_lower:
+        cal, p, f, c = 116.0, 2.5, 0.5, 24.9
+    elif 'кус-кус' in text_lower or 'кускус' in text_lower:
+        cal, p, f, c = 112.0, 3.8, 0.2, 23.2
+    elif 'чечевиц' in text_lower:
+        cal, p, f, c = 116.0, 9.0, 0.4, 20.0
+    elif 'овсянк' in text_lower:
+        cal, p, f, c = 88.0, 3.0, 1.7, 15.0
+    elif 'макарон' in text_lower or 'спагетти' in text_lower:
+        cal, p, f, c = 110.0, 3.6, 1.2, 21.2
+    elif 'булгур' in text_lower:
+        cal, p, f, c = 83.0, 3.1, 0.2, 17.5
+
+    # 4. ХЛЕБОБУЛОЧНЫЕ И СЛАДКОЕ
+    elif 'хлеб черный' in text_lower or 'ржаной' in text_lower:
+        cal, p, f, c = 205.0, 6.6, 1.2, 40.0
+    elif 'хлеб белый' in text_lower or 'хлеб' in text_lower:
+        cal, p, f, c = 265.0, 8.0, 3.2, 49.0
+    elif 'булочк' in text_lower:
+        cal, p, f, c = 320.0, 7.5, 8.0, 54.0
+    elif 'печенье шоколадн' in text_lower or 'шоколадное' in text_lower:
+        cal, p, f, c = 480.0, 6.0, 21.0, 65.0
+    elif 'печенье' in text_lower:
+        cal, p, f, c = 417.0, 7.5, 12.0, 69.0
+    elif 'шоколад' in text_lower or 'конфет' in text_lower or 'сладк' in text_lower:
+        cal, p, f, c = 515.0, 4.5, 28.0, 60.0
+
+    # 5. СОУСЫ
+    elif 'кетчуп' in text_lower:
+        cal, p, f, c = 93.0, 1.0, 0.1, 23.0
+    elif any(w in text_lower for w in ['майонез', 'соус сливочный', 'соус сырный']):
+        cal, p, f, c = 450.0, 1.2, 47.0, 3.5
+    elif 'соус' in text_lower:
+        cal, p, f, c = 150.0, 1.5, 10.0, 12.0
+
+    # 6. ОВОЩИ
+    elif 'картошк' in text_lower or 'картофель' in text_lower:
+        cal, p, f, c = 77.0, 2.0, 0.4, 16.3
+    elif 'морков' in text_lower:
+        cal, p, f, c = 35.0, 1.3, 0.1, 6.9
+    elif 'капуст' in text_lower:
+        cal, p, f, c = 27.0, 1.8, 0.1, 4.7
+    elif 'помидор' in text_lower or 'томат' in text_lower:
+        cal, p, f, c = 18.0, 0.9, 0.2, 3.9
+    elif 'огурц' in text_lower:
+        cal, p, f, c = 15.0, 0.8, 0.1, 2.8
+    elif 'лук' in text_lower:
+        cal, p, f, c = 41.0, 1.4, 0.2, 8.2
+    elif 'чеснок' in text_lower:
+        cal, p, f, c = 149.0, 6.5, 0.5, 29.9
+    elif 'буряк' in text_lower or 'свекл' in text_lower:
+        cal, p, f, c = 43.0, 1.5, 0.1, 8.8
+
+    # 7. МЯСО И РЫБА
     elif any(w in text_lower for w in ['мяс', 'филе', 'куриц', 'говядин', 'рыб', 'лосось']):
-        cal, p, f, c = 150.0, 22.0, 5.0, 0.0
-    elif any(w in text_lower for w in ['гречк', 'рис', 'овсянк', 'каш', 'булгур', 'макарон']):
-        cal, p, f, c = 130.0, 4.0, 1.5, 25.0
-    elif any(w in text_lower for w in ['творог', 'йогурт', 'молоко', 'кефир']):
-        cal, p, f, c = 80.0, 9.0, 3.0, 4.0
+        cal, p, f, c = 135.0, 21.0, 4.5, 0.0
+
+    # ВСЕ ОСТАЛЬНОЕ УСРЕДНЕННОЕ
     else:
         cal, p, f, c = 150.0, 5.0, 5.0, 20.0
 
