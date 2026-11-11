@@ -25,11 +25,11 @@ logging.basicConfig(level=logging.INFO)
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Твой бот на базе бесплатного Gemini запущен и готов к работе.\n\n"
-        "Просто напиши текстом, что ты съел, а я посчитаю калории, БЖУ и подскажу остаток до цели (1750 ккал).\n\n"
+        "Здорово, бро! Твой бот на базе бесплатного Gemini запущен и готов к работе в группе.\n\n"
+        "Просто пиши текстом, что ты съел, а я посчитаю калории, БЖУ и подскажу остаток до цели (1750 ккал).\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
-        "🔄 /reset — сбросить дневник за сегодня (если записал лишнее)\n"
+        "🔄 /reset — сбросить дневник за сегодня\n"
         "📈 /week — отчёт за неделю"
     )
 
@@ -66,10 +66,9 @@ async def cmd_reset(message: types.Message):
     today = datetime.now().strftime("%Y-%m-%d")
     
     if user_id in user_logs:
-        # Оставляем в логах только те записи, которые были в другие дни (чистим сегодняшний день)
         user_logs[user_id] = [l for l in user_logs[user_id] if l["date"] != today]
         
-    await message.answer("🔄 **Дневник за сегодня полностью сброшен!** Все случайные соли, сахара и лишние записи удалены. Начинаем с чистого листа.")
+    await message.answer("🔄 **Дневник за сегодня полностью сброшен!** Начинаем с чистого листа.")
 
 @dp.message(Command("week"))
 async def cmd_week(message: types.Message):
@@ -77,17 +76,24 @@ async def cmd_week(message: types.Message):
 
 @dp.message()
 async def process_food(message: types.Message):
+    # Игнорируем пустые сообщения или если автор — другой бот
+    if not message.text or message.from_user.is_bot:
+        return
+        
     user_id = message.from_user.id
     text = message.text
     
+    # Игнорируем сообщения, начинающиеся со слэша (чтобы не обрабатывать команды как еду)
+    if text.startswith("/"):
+        return
+
     try:
         prompt = (
             "Ты профессиональный нутрициолог. Оцени порцию или продукт по запросу пользователя: "
             f"'{text}'. "
             "Напиши результат строго в одну строчку через запятую в таком формате: "
             "калории (число), белки (число), жиры (число), углеводы (число), название блюда с граммами. "
-            "Даже если у продукта нулевая калорийность (как у соли или воды), всё равно пиши числовые нули, но для обычных продуктов указывай реальные БЖУ. "
-            "Пример для соли: 0, 0.0, 0.0, 0.0, Соль 20 г. "
+            "Пример: 350, 20.5, 10.0, 35.0, Картошка вареная с курицей 300 г. "
             "Никаких других слов или объяснений в начале, только эти 5 элементов через запятую."
         )
         
@@ -96,15 +102,18 @@ async def process_food(message: types.Message):
             contents=prompt,
         )
         
-        response_text = response.text.strip()
-        
+        response_text = response.text.strip() if response and response.text else ""
         parts = [p.strip() for p in response_text.split(',')]
+        
         if len(parts) >= 5:
-            cal = float(parts[0])
-            protein = float(parts[1])
-            fat = float(parts[2])
-            carbs = float(parts[3])
-            desc = ", ".join(parts[4:])
+            try:
+                cal = float(parts[0])
+                protein = float(parts[1])
+                fat = float(parts[2])
+                carbs = float(parts[3])
+                desc = ", ".join(parts[4:])
+            except ValueError:
+                cal, protein, fat, carbs, desc = 350, 20.0, 10.0, 35.0, text
         else:
             cal, protein, fat, carbs, desc = 350, 20.0, 10.0, 35.0, text
 
@@ -132,7 +141,7 @@ async def process_food(message: types.Message):
         
     except Exception as e:
         logging.error(f"Error parsing food with Gemini: {e}")
-        await message.answer(f"⚠️ Ошибка API: {str(e)}")
+        await message.answer("⚠️ Не удалось распознать блюдо. Попробуй написать чуть иначе, например: `куриное филе 100г`")
 
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
