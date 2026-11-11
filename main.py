@@ -5,17 +5,19 @@ from datetime import datetime
 import http.server
 import socketserver
 import threading
-import requests
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from openai import OpenAI
 
 # --- НАСТРОЙКИ ---
 TELEGRAM_TOKEN = "9054880366:AAG8slNCtvq7DjyMLfa1-8pxriN1lD02EWI"
-GEMINI_TOKEN = "AQ.Ab8RN6L8de-KaUq7SfrJOzyniKhJV-4a22XgwG5-R5fFX3uwLw"
-TARGET_CALORIES = 1750  # Твоя цель по калориям
+OPENAI_API_KEY = "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" 
+TARGET_CALORIES = 1750  # Твой дневной лимит калорий
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
+
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 user_logs = {}
 
@@ -24,8 +26,8 @@ logging.basicConfig(level=logging.INFO)
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Бот переведен на прямой API-доступ к Gemini и полностью готов к работе.\n\n"
-        "Напиши текстом, что ты съел, а я посчитаю КБЖУ, запишу в статистику и подскажу остаток до цели (1750 ккал).\n\n"
+        "Здорово, бро! Твой бот для подсчета КБЖУ на базе ChatGPT запущен и готов к работе.\n\n"
+        "Просто напиши текстом, что ты съел, а я посчитаю калории, белки, жиры, углеводы, запишу в дневник и подскажу остаток до цели (1750 ккал).\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
         "📈 /week — отчёт за неделю"
@@ -67,32 +69,26 @@ async def process_food(message: types.Message):
     user_id = message.from_user.id
     text = message.text
     
-    prompt = (
-        f"Ты профессиональный нутрициолог. Оцени порцию или продукт по запросу: '{text}'. "
-        "Напиши результат строго в одну строчку через запятую в таком формате: "
-        "калории (число), белки (число), жиры (число), углеводы (число), название блюда с граммами. "
-        "Пример: 450, 25.5, 12.0, 50.2, Лаваш с сыром и лососем. "
-        "Никаких других слов или объяснений в начале, только эти 5 элементов через запятую."
-    )
-    
     try:
-        # Прямой запрос к API Gemini через HTTP (идеально для OAuth-токенов)
-        url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
-        headers = {
-            "Authorization": f"Bearer {GEMINI_TOKEN}",
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }]
-        }
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Ты профессиональный нутрициолог. Оцени порцию или продукт по запросу пользователя. "
+                        "Напиши результат строго в одну строчку через запятую в таком формате: "
+                        "калории (число), белки (число), жиры (число), углеводы (число), название блюда с граммами. "
+                        "Пример: 450, 25.5, 12.0, 50.2, Лаваш с сыром и лососем. "
+                        "Никаких других слов, объяснений или знаков препинания в начале, только эти 5 элементов через запятую."
+                    )
+                },
+                {"role": "user", "content": text}
+            ],
+            temperature=0.2
+        )
         
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
-        res_data = response.json()
-        
-        # Достаем текст из ответа Google API
-        response_text = res_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        response_text = response.choices[0].message.content.strip()
         
         parts = [p.strip() for p in response_text.split(',')]
         if len(parts) >= 5:
@@ -127,19 +123,8 @@ async def process_food(message: types.Message):
         )
         
     except Exception as e:
-        logging.error(f"Error parsing food with Gemini HTTP: {e}")
-        # Запасной вариант, чтобы бот никогда не падал
-        cal, protein, fat, carbs, desc = 300, 18.0, 10.0, 30.0
-        today = datetime.now().strftime("%Y-%m-%d")
-        if user_id not in user_logs:
-            user_logs[user_id] = []
-        user_logs[user_id].append({"date": today, "calories": cal, "protein": protein, "fat": fat, "carbs": carbs})
-        
-        await message.answer(
-            f"✅ Записал (базово): *{text}*\n\n"
-            f"🔥 **+{cal:.0f} ккал** (Б: {protein}г | Ж: {fat}г | У: {carbs}г)\n\n"
-            f"📊 Всего за сегодня: **{TARGET_CALORIES - cal} ккал** осталось"
-        )
+        logging.error(f"Error parsing food with OpenAI: {e}")
+        await message.answer(f"⚠️ Ошибка OpenAI API: {str(e)}")
 
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
@@ -149,7 +134,7 @@ def run_web_server():
         httpd.serve_forever()
 
 async def main():
-    print("Облачный бот на Gemini HTTP запущен и слушает Telegram!")
+    print("Бот на ChatGPT запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
