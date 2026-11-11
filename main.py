@@ -248,8 +248,9 @@ async def process_food(message: types.Message):
                 "Напиши в ответ ТОЛЬКО 4 числа через пробел (калории, белки, жиры, углеводы). Больше ничего."
             )
             
+            # Используем стабильную рабочую модель
             response = ai_client.models.generate_content(
-                model="gemini-3.8-flash",
+                model="gemini-2.5-flash",
                 contents=prompt,
             )
             
