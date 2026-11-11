@@ -1,18 +1,19 @@
 import os
 import sqlite3
 import logging
-import requests
 import re
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
+from aiohttp import web
 
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TARGET_CALORIES = 1750
+PORT = int(os.environ.get("PORT", 8080))
 
-if not TELEGRAM_TOKEN or not GEMINI_API_KEY:
-    raise ValueError("❌ Ошибка: Не заданы TELEGRAM_TOKEN или GEMINI_API_KEY в переменных окружения!")
+if not TELEGRAM_TOKEN:
+    raise ValueError("❌ Ошибка: Не задан TELEGRAM_TOKEN в переменных окружения!")
 
 bot = Bot(token=TELEGRAM_TOKEN)
 dp = Dispatcher()
@@ -67,139 +68,37 @@ def clear_today_logs_db(user_id, date):
     conn.commit()
     conn.close()
 
+# Расширенный офлайн-справочник (на 100 грамм продукта)
 FOOD_DATABASE = {
-    'гречк': (103.0, 3.6, 0.7, 20.5),
-    'рис': (116.0, 2.5, 0.5, 24.9),
-    'овсянк': (88.0, 3.0, 1.7, 15.0),
-    'куриц': (135.0, 23.0, 2.5, 0.0),
+    # Копчености и курица
+    'ножки копчен': (215.0, 19.0, 15.0, 0.0),
+    'ножка копчен': (215.0, 19.0, 15.0, 0.0),
+    'курица копчен': (195.0, 20.0, 12.0, 0.0),
+    'голень куриц': (160.0, 18.0, 9.0, 0.0),
+    'бедро куриц': (185.0, 17.0, 12.0, 0.0),
+    'крыло куриц': (210.0, 18.0, 15.0, 0.0),
+    'филе курин': (113.0, 23.6, 1.9, 0.4),
     'филе': (135.0, 23.0, 2.5, 0.0),
-    'индейк': (140.0, 21.0, 3.0, 0.0),
-    'говядин': (187.0, 19.0, 12.0, 0.0),
+    'куриц': (135.0, 23.0, 2.5, 0.0),
+    
+    # Масла и жиры
+    'масло сливочн': (717.0, 0.8, 81.0, 0.0),
+    'масло оливков': (884.0, 0.0, 100.0, 0.0),
+    'олия оливков': (884.0, 0.0, 100.0, 0.0),
+    'масло подсолнечн': (899.0, 0.0, 99.9, 0.0),
+    'олия подсолнечн': (899.0, 0.0, 99.9, 0.0),
+    'олия': (899.0, 0.0, 99.9, 0.0),
+    'масло': (884.0, 0.0, 100.0, 0.0),
+    
+    # Молочка и сливки
+    'сливки 10': (118.0, 3.0, 10.0, 4.0),
+    'сливки 20': (206.0, 2.8, 20.0, 3.5),
+    'сливки 30': (294.0, 2.4, 30.0, 3.2),
+    'сливки': (206.0, 2.8, 20.0, 3.5),
+    'молоко': (42.0, 3.2, 2.5, 4.7),
+    'кефир': (50.0, 2.8, 2.5, 4.0),
     'творог': (101.0, 18.0, 2.0, 3.3),
-    'яйц': (155.0, 13.0, 11.0, 1.1),
-    'молок': (42.0, 3.2, 2.5, 4.7),
-    'сыр': (350.0, 25.0, 26.0, 1.3),
-    'хлеб': (265.0, 9.0, 3.2, 49.0),
-    'банан': (89.0, 1.1, 0.3, 22.8),
-    'яблок': (47.0, 0.4, 0.4, 9.8),
-    'картофел': (77.0, 2.0, 0.4, 17.0),
-    'макарон': (110.0, 4.0, 1.2, 21.0),
-}
-
-def smart_dictionary_lookup(text: str):
-    text_lower = text.lower()
-    match_weight = re.search(r'(\d+)\s*(?:г|гр|мл|шт)?', text_lower)
-    weight = float(match_weight.group(1)) if match_weight else 100.0
     
-    if 'шт' in text_lower and match_weight:
-        weight = float(match_weight.group(1)) * 55.0
-
-    k = weight / 100.0
-    
-    for key, values in FOOD_DATABASE.items():
-        if key in text_lower:
-            cal, p, f, c = values
-            return round(cal * k, 1), round(p * k, 1), round(f * k, 1), round(c * k, 1)
-            
-    return round(150.0 * k, 1), round(10.0 * k, 1), round(5.0 * k, 1), round(15.0 * k, 1)
-
-def ask_gemini_rest(prompt_text: str):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
-    headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{
-            "parts": [{"text": prompt_text}]
-        }]
-    }
-    try:
-        response = requests.post(url, json=payload, headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            return data["candidates"][0]["content"]["parts"][0]["text"]
-    except Exception as e:
-        print(f"Gemini request exception: {e}")
-    return None
-
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.answer(
-        "Здорово, бро! Бот исправлен и готов к работе.\n\n"
-        "Команды:\n"
-        "📊 /status — итог за день\n"
-        "🔄 /reset — сбросить дневник"
-    )
-
-@dp.message(Command("status"))
-async def cmd_status(message: types.Message):
-    user_id = message.from_user.id
-    today = datetime.now().strftime("%Y-%m-%d")
-    today_logs = get_today_logs_db(user_id, today)
-    
-    if not today_logs:
-        await message.answer("Сегодня ты еще ничего не записывал.")
-        return
-        
-    total_cal = sum(item["calories"] for item in today_logs)
-    total_p = sum(item["protein"] for item in today_logs)
-    total_f = sum(item["fat"] for item in today_logs)
-    total_c = sum(item["carbs"] for item in today_logs)
-    left = TARGET_CALORIES - total_cal
-    
-    await message.answer(
-        f"📊 **Итог за сегодня:**\n\n"
-        f"🔥 Калории: **{total_cal:.0f} ккал** (Осталось: {left:.0f})\n"
-        f"🥩 Б: {total_p:.1f}г | 🥑 Ж: {total_f:.1f}г | 🍞 У: {total_c:.1f}г"
-    )
-
-@dp.message(Command("reset"))
-async def cmd_reset(message: types.Message):
-    user_id = message.from_user.id
-    today = datetime.now().strftime("%Y-%m-%d")
-    clear_today_logs_db(user_id, today)
-    await message.answer("🔄 **Дневник за сегодня сброшен!**")
-
-@dp.message()
-async def process_food(message: types.Message):
-    if not message.text or message.from_user.is_bot or message.text.startswith("/"):
-        return
-        
-    user_id = message.from_user.id  # <-- ВОТ ЭТУ СТРОКУ МЫ ДОБАВИЛИ
-    text = message.text
-    source_badge = "🤖 Gemini API"
-    
-    prompt = f"Посчитай КБЖУ для продукта: '{text}'. Напиши в ответ ТОЛЬКО 4 числа через пробел: калории, белки, жиры, углеводы. Больше ни слова."
-    ai_response = ask_gemini_rest(prompt)
-    
-    cal, protein, fat, carbs = 0, 0, 0, 0
-    
-    if ai_response:
-        numbers = [float(n) for n in re.findall(r'\d+(?:\.\d+)?', ai_response)]
-        if len(numbers) >= 4:
-            cal, protein, fat, carbs = numbers[0], numbers[1], numbers[2], numbers[3]
-        else:
-            source_badge = "📚 Справочник"
-            cal, protein, fat, carbs = smart_dictionary_lookup(text)
-    else:
-        source_badge = "📚 Справочник (офлайн)"
-        cal, protein, fat, carbs = smart_dictionary_lookup(text)
-
-    today = datetime.now().strftime("%Y-%m-%d")
-    add_log_db(user_id, today, cal, protein, fat, carbs, text)
-    
-    today_logs = get_today_logs_db(user_id, today)
-    total_cal = sum(item["calories"] for item in today_logs)
-    left = TARGET_CALORIES - total_cal
-    
-    await message.answer(
-        f"✅ Записал: *{text}* [{source_badge}]\n\n"
-        f"🔥 **+{cal:.0f} ккал** (Б: {protein}г | Ж: {fat}г | У: {carbs}г)\n\n"
-        f"📊 Всего за сегодня: **{total_cal:.0f} / {TARGET_CALORIES} ккал** (осталось: {left:.0f})"
-    )
-
-if __name__ == "__main__":
-    import asyncio
-    async def main():
-        print("Бот запущен!")
-        await bot.delete_webhook(drop_pending_updates=True)
-        await dp.start_polling(bot)
-    asyncio.run(main())
+    # Снеки, сухарики, джерки
+    'сухарик': (380.0, 11.0, 8.0, 65.0),
+    'рухвик': (3
