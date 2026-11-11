@@ -8,6 +8,7 @@ import socketserver
 import threading
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+import re
 from google import genai
 
 # --- НАСТРОЙКИ ---
@@ -80,8 +81,8 @@ def get_user_lock(user_id: int) -> asyncio.Lock:
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "Здорово, бро! Бот полностью восстановлен и готов к работе.\n\n"
-        "Пиши любую еду, снеки или списки, а я посчитаю КБЖУ!\n\n"
+        "Здорово, бро! Бот полностью восстановлен.\n\n"
+        "Пиши любую еду или снеки, а я посчитаю КБЖУ!\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
         "🔄 /reset — сбросить дневник\n"
@@ -141,13 +142,13 @@ async def process_food(message: types.Message):
     async with get_user_lock(user_id):
         try:
             prompt = (
-                "Ты профессиональный нутрициолог. Пользователь указал продукт или блюдо (учитывай способ приготовления — отварные, жареные и т.д.): "
+                "Ты профессиональный нутрициолог. Оцени КБЖУ для следующего продукта или блюда: "
                 f"'{text}'. "
-                "Посчитай калории, белки, жиры и углеводы для указанного веса/объема. "
-                "Выдай ответ СТРОГО В ОДНУ СТРОЧКУ, разделяя поля вертикальной чертой (|) в таком порядке: "
-                "калории | белки | жиры | углеводы | название продукта. "
-                "Пример: 130 | 2.0 | 7.0 | 15.0 | Чипсы 25 г. "
-                "Никаких переносов строк, только части через '|'."
+                "Напиши ответ ровно в 4 строки, где каждая строка — это строго одно число (без единиц измерения, букв и лишних слов): "
+                "1 строка: калории "
+                "2 строка: белки в граммах "
+                "3 строка: жиры в граммах "
+                "4 строка: углеводы в граммах"
             )
             
             response = ai_client.models.generate_content(
@@ -156,29 +157,25 @@ async def process_food(message: types.Message):
             )
             
             response_text = response.text.strip() if response and response.text else ""
-            response_text = " ".join(response_text.splitlines())
+            lines = [line.strip() for line in response_text.splitlines() if line.strip()]
             
-            parts = [p.strip() for p in response_text.split('|')]
+            numbers = []
+            for line in lines:
+                match = re.search(r'\d+(?:\.\d+)?', line)
+                if match:
+                    numbers.append(float(match.group()))
             
-            # Супер-надежный разбор с защитой от сбоев
-            if len(parts) >= 5:
-                cal = float(parts[0])
-                protein = float(parts[1])
-                fat = float(parts[2])
-                carbs = float(parts[3])
-                desc = parts[4]
-            elif len(parts) == 4:
-                cal = float(parts[0])
-                protein = float(parts[1])
-                fat = float(parts[2])
-                carbs = float(parts[3])
-                desc = text
+            if len(numbers) >= 4:
+                cal = numbers[0]
+                protein = numbers[1]
+                fat = numbers[2]
+                carbs = numbers[3]
             else:
-                cal, protein, fat, carbs, desc = 150, 5.0, 5.0, 20.0, text
+                cal, protein, fat, carbs = 150.0, 5.0, 5.0, 20.0
 
+            desc = text
             today = datetime.now().strftime("%Y-%m-%d")
             
-            # Сохраняем в базу данных
             add_log_db(user_id, today, cal, protein, fat, carbs, desc)
             
             today_logs = get_today_logs_db(user_id, today)
@@ -193,7 +190,7 @@ async def process_food(message: types.Message):
             
         except Exception as e:
             logging.error(f"Error parsing food with Gemini: {e}")
-            await message.answer(f"✅ Записал: *{text}*\n\n🔥 **+150 ккал**\n\n📊 Счетчик обновлен!")
+            await message.answer("⚠️ Не удалось обработать запрос. Попробуй еще раз написать продукт.")
 
 def run_web_server():
     PORT = int(os.environ.get("PORT", 10000))
