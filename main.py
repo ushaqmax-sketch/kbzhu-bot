@@ -11,7 +11,6 @@ from google import genai
 
 # --- НАСТРОЙКИ ---
 TELEGRAM_TOKEN = "9054880366:AAG8slNCtvq7DjyMLfa1-8pxriN1lD02EWI"
-# Ключ автоматически подтягивается из защищенных настроек Render (GEMINI_API_KEY)
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TARGET_CALORIES = 1750  # Твой дневной лимит калорий
 
@@ -27,9 +26,10 @@ logging.basicConfig(level=logging.INFO)
 async def cmd_start(message: types.Message):
     await message.answer(
         "Здорово, бро! Твой бот на базе бесплатного Gemini запущен и готов к работе.\n\n"
-        "Просто напиши текстом, что ты съел, а я посчитаю калории, белки, жиры, углеводы, запишу в дневник и подскажу остаток до цели (1750 ккал).\n\n"
+        "Просто напиши текстом, что ты съел, а я посчитаю калории, БЖУ и подскажу остаток до цели (1750 ккал).\n\n"
         "Команды:\n"
         "📊 /status — итог за сегодня\n"
+        "🔄 /reset — сбросить дневник за сегодня (если записал лишнее)\n"
         "📈 /week — отчёт за неделю"
     )
 
@@ -60,6 +60,17 @@ async def cmd_status(message: types.Message):
         f"🍞 Углеводы: {total_c:.1f} г"
     )
 
+@dp.message(Command("reset"))
+async def cmd_reset(message: types.Message):
+    user_id = message.from_user.id
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    if user_id in user_logs:
+        # Оставляем в логах только те записи, которые были в другие дни (чистим сегодняшний день)
+        user_logs[user_id] = [l for l in user_logs[user_id] if l["date"] != today]
+        
+    await message.answer("🔄 **Дневник за сегодня полностью сброшен!** Все случайные соли, сахара и лишние записи удалены. Начинаем с чистого листа.")
+
 @dp.message(Command("week"))
 async def cmd_week(message: types.Message):
     await message.answer("📈 **Еженедельный отчет:**\nВсе данные под контролем, держись отлично!")
@@ -81,8 +92,8 @@ async def process_food(message: types.Message):
         )
         
         response = ai_client.models.generate_content(
-    model="gemini-3.8-flash",
-    contents=prompt,
+            model="gemini-3.8-flash",
+            contents=prompt,
         )
         
         response_text = response.text.strip()
